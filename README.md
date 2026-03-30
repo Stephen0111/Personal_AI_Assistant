@@ -1,4 +1,4 @@
-# 🧠 Personal AI Assistant (Multi-Agent RAG System)
+#  Personal AI Assistant (Multi-Agent RAG System)
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-red)
@@ -8,7 +8,7 @@
 
 ---
 
-## 🚀 Overview
+##  Overview
 
 This project is a **multi-agent, retrieval-augmented, analytics-enabled personal AI assistant** embedded into a portfolio website.
 
@@ -27,9 +27,9 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-## ✨ Features
+##  Features
 
-### 🧑‍💼 Smart Portfolio Assistant
+###  Smart Portfolio Assistant
 - Streamlit-based chatbot UI
 - Role-based responses (Recruiter, Engineer, Hiring Manager, Student)
 - Explainability mode (retrieval + reasoning transparency)
@@ -37,7 +37,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-### 🤖 Multi-Agent Architecture
+###  Multi-Agent Architecture
 - **Controller Agent** → Intent classification & routing
 - **Career Agent** → CV & experience Q&A
 - **Project Explainer Agent** → GitHub repo analysis & diagrams
@@ -45,7 +45,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-### 🔎 Retrieval-Augmented Generation (RAG)
+###  Retrieval-Augmented Generation (RAG)
 - Vector database: **ChromaDB**
 - Embeddings: **Sentence Transformers**
 - Data sources:
@@ -56,7 +56,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-### 🔄 Intelligent GitHub Ingestion
+###  Intelligent GitHub Ingestion
 - **Event-triggered ingestion (primary)**
   - Auto-runs when a new repo is created
   - Pulls README + files
@@ -69,7 +69,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-### 📊 Analytics & Observability
+###  Analytics & Observability
 - Event tracking (questions, sessions, clicks)
 - LLM metrics (latency, token usage, tool calls)
 - RAG analytics (retrieval quality, unused chunks)
@@ -79,20 +79,20 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-### 📅 Scheduling Integration
+###  Scheduling Integration
 - Microsoft Graph API (Teams meetings)
 - Calendly API
 - Automated booking workflows
 
 ---
 
-## 🏗️ Architecture Overview
+##  Architecture Overview
 
 ![Architecture Overview](./assets/473A70AB-C566-419D-A709-51080B785B6D.png)
 
 ---
 
-## 🧩 System Design
+##  System Design
 
 ### 🔝 High-Level Flow
 
@@ -106,7 +106,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 | Layer | Technology |
 |------|-----------|
@@ -123,7 +123,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-## 🤖 Multi-Agent Architecture
+##  Multi-Agent Architecture
 
 ### Controller Agent
 - Intent classification
@@ -155,7 +155,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-## 🔎 RAG Pipeline
+##  RAG Pipeline
 
 ### Data Sources
 - CV text
@@ -172,9 +172,9 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-## 🔄 GitHub Ingestion Workflow
+##  GitHub Ingestion Workflow
 
-### ⚡ Primary Trigger (Event-Driven)
+###  Primary Trigger (Event-Driven)
 - Triggered when:
   - New repository is created
 - Steps:
@@ -183,20 +183,20 @@ This system showcases **production-grade AI architecture**, combining:
   - Chunk + embed content
   - Update vector DB
 
-### 🔁 Fallback (Monthly Refresh)
+###  Fallback (Monthly Refresh)
 - Full re-index of all repositories
 - Ensures:
   - Data consistency
   - Recovery from missed events
 
-### 🧠 Why This Approach?
+###  Why This Approach?
 - Minimizes cost (only process changes)
 - Keeps system up-to-date
 - Demonstrates production-grade pipeline design
 
 ---
 
-## 📅 Scheduling Workflow
+##  Scheduling Workflow
 
 1. User requests meeting
 2. Scheduling Agent detects intent
@@ -208,7 +208,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ---
 
-## 📊 Analytics & Observability
+##  Analytics & Observability
 
 ### Event Tracking
 - Questions asked
@@ -237,7 +237,7 @@ Landing → Chat → Project View → Meeting Booked
 
 ---
 
-## 💻 Local Development
+##  Local Development
 
 ### Prerequisites
 - Python 3.10+
