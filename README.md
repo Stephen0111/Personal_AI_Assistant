@@ -88,7 +88,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ## 🏗️ Architecture Overview
 
-![Architecture Overview](./assets/architecture-diagram.jpeg)
+![Architecture Overview](./assets/473A70AB-C566-419D-A709-51080B785B6D.png)
 
 ---
 
