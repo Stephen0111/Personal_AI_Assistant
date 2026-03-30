@@ -110,10 +110,10 @@ This system showcases **production-grade AI architecture**, combining:
 
 | Layer | Technology |
 |------|-----------|
-| Frontend | Streamlit |
+| Frontend | Streamlit/React |
 | Backend | Python, FastAPI (optional) |
 | Agents | LangChain |
-| Vector DB | ChromaDB |
+| Vector DB | ChromaDB/Pinecone |
 | Embeddings | Sentence Transformers |
 | LLMs | Hugging Face (Mistral, Zephyr), Vertex AI |
 | Scheduling | Microsoft Graph API, Calendly |
