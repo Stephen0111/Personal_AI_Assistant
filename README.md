@@ -94,7 +94,7 @@ This system showcases **production-grade AI architecture**, combining:
 
 ##  System Design
 
-### 🔝 High-Level Flow
+###  High-Level Flow
 
 1. User interacts with Streamlit UI
 2. Controller Agent classifies intent
