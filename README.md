@@ -10,7 +10,7 @@
 
 ##  Overview
 
-This project is a **multi-agent, retrieval-augmented, analytics-enabled personal AI assistant** embedded into a portfolio website.
+This project is a cloud native **multi-agent, retrieval-augmented, analytics-enabled personal AI assistant** embedded into a portfolio website.
 
 It is designed to act as a **24/7 intelligent representative**, capable of:
 - Answering recruiter questions about my experience
