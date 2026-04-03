@@ -1,4 +1,7 @@
 #  Personal AI Assistant (Multi-Agent RAG System)
+**🔗 Live Demo:** [https://huggingface.co/spaces/Stephen0111/personal-ai-assistant](https://huggingface.co/spaces/Stephen0111/personal-ai-assistant)
+
+
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-red)
