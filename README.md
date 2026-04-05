@@ -250,7 +250,7 @@ Landing → Chat → Project View → Meeting Booked
 ### Setup
 
 ```bash
-git clone https://github.com/your-username/personal-ai-assistant.git
+git clone https://github.com/Stephen0111/personal-ai-assistant.git
 cd personal-ai-assistant
 
 python -m venv venv
