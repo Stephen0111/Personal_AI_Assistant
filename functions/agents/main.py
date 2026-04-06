@@ -2,260 +2,177 @@ import functions_framework
 import json
 import os
 import tarfile
+import logging
 
 from google.cloud import storage
 from google import genai
-from google.genai.types import GenerateContentConfig, HttpOptions
+from google.genai.types import GenerateContentConfig, HttpOptions, EmbedContentConfig
 
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+import chromadb
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def load_chroma():
-    bucket = storage.Client().bucket(os.environ["GCS_BUCKET"])
-    blob = bucket.blob("chroma_db.tar.gz")
+    bucket_name = os.environ.get("GCS_BUCKET")
+    project_id = os.environ.get("GCP_PROJECT")
+    db_path = "/tmp/chroma_db"
+    tar_path = "/tmp/chroma_db.tar.gz"
 
-    if not os.path.exists("/tmp/chroma_db") and blob.exists():
-        blob.download_to_filename("/tmp/chroma_db.tar.gz")
-        with tarfile.open("/tmp/chroma_db.tar.gz", "r:gz") as tar:
-            tar.extractall("/tmp/")
+    if not os.path.exists(db_path):
+        logger.info("Downloading Chroma DB...")
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob("chroma_db.tar.gz")
+        
+        if blob.exists():
+            blob.download_to_filename(tar_path)
+            with tarfile.open(tar_path, "r:gz") as tar:
+                tar.extractall("/tmp/")
+        else:
+            raise FileNotFoundError(f"Database not found in bucket: {bucket_name}")
 
-    embedder = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
-
-    return Chroma(
-        persist_directory="/tmp/chroma_db",
-        embedding_function=embedder
-    )
-
-
-def classify_intent(question):
-    keywords = {
-        "career": ["experience", "job", "worked", "cv", "resume", "skills", "career"],
-        "project": ["project", "github", "built", "code", "architecture", "how does"],
-        "schedule": ["meeting", "book", "call", "availability", "calendly", "schedule"],
-    }
-
-    q = (question or "").lower()
-    for intent, words in keywords.items():
-        if any(word in q for word in words):
-            return intent
-    return "career"
-
-
-def retrieve_context(db, question, k=4):
-    docs = db.similarity_search(question, k=k)
-    return "\n\n".join(d.page_content for d in docs)
-
-
-def call_llm(system, context, question):
-    project_id = os.environ["GCP_PROJECT"]
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
-    model_name = os.environ.get("VERTEX_MODEL", "gemini-2.5-flash")
-
-    client = genai.Client(
+    client_genai = genai.Client(
         vertexai=True,
         project=project_id,
-        location=location,
-        http_options=HttpOptions(api_version="v1"),
+        location="europe-west2"
     )
 
-    user_prompt = f"""Context:
-{context}
+    client_chroma = chromadb.PersistentClient(path=db_path)
+    collection = client_chroma.get_collection(name="portfolio")
 
-Question:
-{question}
+    return collection, client_genai
 
-Instructions:
-- Answer using only the context above.
-- If the context is insufficient, say so clearly.
-- Do not invent facts.
-"""
+def get_intent_and_context(collection, client_genai, question):
+    q_lower = question.lower()
+    
+    # 1. Initialize intent with a default value to prevent 'NameError'
+    intent = "career" 
+    
+    # 2. Intent Classification Logic
+    if any(word in q_lower for word in ["project", "github", "repo", "built", "architecture"]):
+        intent = "project"
+    elif any(word in q_lower for word in ["book", "meeting", "calendly", "schedule", "yes", "ok"]):
+        intent = "schedule"
+    else:
+        # LLM Fallback for intent
+        intent_prompt = f"Classify this query into 'career', 'project', or 'schedule': {question}"
+        try:
+            intent_res = client_genai.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=intent_prompt,
+                config=GenerateContentConfig(temperature=0, max_output_tokens=10)
+            )
+            llm_intent = intent_res.text.strip().lower() if intent_res.text else "career"
+            if "project" in llm_intent: intent = "project"
+            elif "schedule" in llm_intent: intent = "schedule"
+            else: intent = "career"
+        except Exception as e:
+            logger.error(f"Intent LLM failed: {e}")
+            intent = "career"
 
-    response = client.models.generate_content(
-        model=model_name,
+    # 3. Context Retrieval
+    num_chunks = 6
+    if intent == "project":
+        num_chunks = 12 
+    elif intent == "schedule":
+        num_chunks = 2
+
+    embed_res = client_genai.models.embed_content(
+        model="gemini-embedding-001",
+        contents=[question],
+        config=EmbedContentConfig(task_type="RETRIEVAL_QUERY")
+    )
+    
+    results = collection.query(
+        query_embeddings=[embed_res.embeddings[0].values],
+        n_results=num_chunks,
+        include=["documents"]
+    )
+    
+    context = "\n\n".join(results["documents"][0]) if results and results["documents"] else ""
+    return intent, context
+
+def call_llm(client_genai, system, context, question):
+    user_prompt = f"""
+    CONTEXT FROM STEPHEN'S PORTFOLIO:
+    {context}
+
+    USER QUESTION:
+    {question}
+
+    INSTRUCTIONS:
+    1. Answer the question comprehensively using the context above.
+    2. For projects: Explain the 'Why', 'How', and 'Tech Stack' in detail.
+    3. If multiple projects are relevant, list them all.
+    4. If the context is thin, do not give up. Provide the best possible overview and suggest a technical deep-dive meeting.
+    """
+
+    response = client_genai.models.generate_content(
+        model="gemini-2.5-flash",
         contents=user_prompt,
         config=GenerateContentConfig(
-            system_instruction=[system],
-            temperature=0.2,
-            max_output_tokens=600,
+            system_instruction=system,
+            temperature=0.5,
+            max_output_tokens=2000,
+            top_p=0.95,
         ),
     )
-
-    return response.text if response.text else "Sorry, I could not generate a response."
-
+    return response.text if response.text else "I'm sorry, I encountered an issue. Let's try rephrasing or schedule a call."
 
 SYSTEM_PROMPTS = {
     "career": """
-You are an AI career assistant representing the portfolio owner.
-
-Your goals:
-- Answer recruiter and hiring manager questions about experience
-- Highlight impact, results, and technologies used
-- Be concise, confident, and professional
-- Use ONLY the provided context
-- Never invent experience not present in context
-
-Response guidelines:
-- Start with a direct answer
-- Use bullet points where helpful
-- Emphasize:
-  - Technologies used
-  - Business impact
-  - Scale of work
-  - Cloud / AI / data engineering skills
-- If context is missing, say:
-  "I don't have enough information in the portfolio to answer that."
-
-Tone:
-Professional, recruiter-friendly, confident, concise.
+You are Stephen Adegbile's professional career assistant.
+Represent Stephen accurately. Answer questions about experience, skills, and achievements.
+Use ONLY the retrieved context. Be professional and concise.
 """,
     "project": """
-You are a senior AI engineer explaining portfolio projects.
-
-Your goals:
-- Explain projects clearly and technically
-- Highlight architecture decisions
-- Emphasize engineering depth
-- Use ONLY provided context
-- Do not hallucinate missing components
-
-Structure responses like:
-
-Overview:
-Brief explanation of the project
-
-Architecture:
-Describe system components
-
-Tech Stack:
-List technologies used
-
-Key Features:
-Bullet points
-
-Engineering Highlights:
-Why the project is impressive
-
-Tone:
-Technical, clear, concise, senior-level.
-
-Focus on:
-- Cloud architecture
-- AI / RAG pipelines
-- Data engineering
-- APIs
-- scalability
-- deployment
-
-Avoid:
-- generic explanations
-- vague descriptions
-- repetition
+You are a Technical Lead explaining Stephen Adegbile's projects.
+Provide technical depth. Explain architecture, tech stack, and engineering decisions.
+If context is limited, provide a high-level overview and suggest a meeting.
 """,
     "schedule": """
-You are a scheduling assistant helping visitors book a meeting.
-
-Your goals:
-- Encourage booking a meeting
-- Be friendly and professional
-- Provide both booking link and email
-- Tailor response based on intent
-
-Instructions:
-- If user is recruiter: suggest short intro call
-- If engineer: suggest technical deep dive
-- If hiring manager: suggest architecture discussion
-
-Always include:
-
-Calendly booking link:
-https://calendly.com/stephen-adegbile19/new-meeting
-
-Email fallback:
-stephen@stephenadegbile.uk
-
-Example response style:
-
-"I'd be happy to discuss this further.
-
-You can book a time directly here:
-https://calendly.com/stephen-adegbile19/new-meeting
-
-Or email me:
-stephen@stephenadegbile.uk
-
-Looking forward to speaking with you."
-""",
+You are Stephen Adegbile's scheduling assistant.
+Always provide the Calendly link: https://calendly.com/stephen-adegbile19/new-meeting
+And email: stephen@stephenadegbile.uk
+"""
 }
-
 
 @functions_framework.http
 def agent_router(request):
     if request.method == "OPTIONS":
-        headers = {
+        return ("", 204, {
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-        }
-        return ("", 204, headers)
+            "Access-Control-Allow-Methods": "POST",
+            "Access-Control-Allow-Headers": "Content-Type"
+        })
+
+    headers = {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"}
 
     try:
         data = request.get_json(silent=True) or {}
         question = data.get("question", "").strip()
-        role = data.get("role", "general").strip().lower()
+        role = data.get("role", "general").lower()
 
         if not question:
-            headers = {
-                "Access-Control-Allow-Origin": "*",
-                "Content-Type": "application/json",
-            }
-            return (
-                json.dumps({"error": "question is required"}),
-                400,
-                headers,
-            )
+            return (json.dumps({"error": "No question provided"}), 400, headers)
 
-        intent = classify_intent(question)
-        db = load_chroma()
-        context = retrieve_context(db, question)
-        system = SYSTEM_PROMPTS[intent]
-
+        collection, client_genai = load_chroma()
+        intent, context = get_intent_and_context(collection, client_genai, question)
+        
+        system_base = SYSTEM_PROMPTS.get(intent, SYSTEM_PROMPTS["career"])
+        
+        # Role-based prompt adjustment
         if role == "recruiter":
-            system += "\nKeep answers brief and highlight business impact and measurable outcomes."
+            system_base += "\nHighlight business impact and delivery."
         elif role == "engineer":
-            system += "\nInclude technical depth, architecture choices, and implementation details."
-        elif role == "hiring manager":
-            system += "\nEmphasize ownership, delivery, leadership, and business value."
-        elif role == "student":
-            system += "\nExplain clearly, simply, and in an educational way."
+            system_base += "\nHighlight technical depth and architecture."
 
-        answer = call_llm(system, context, question)
+        answer = call_llm(client_genai, system_base, context, question)
 
-        headers = {
-            "Access-Control-Allow-Origin": "*",
-            "Content-Type": "application/json",
-        }
-        return (
-            json.dumps(
-                {
-                    "answer": answer,
-                    "intent": intent,
-                    "role": role,
-                }
-            ),
-            200,
-            headers,
-        )
+        return (json.dumps({"answer": answer, "intent": intent, "role": role}), 200, headers)
 
     except Exception as e:
-        headers = {
-            "Access-Control-Allow-Origin": "*",
-            "Content-Type": "application/json",
-        }
-        return (
-            json.dumps({"error": str(e)}),
-            500,
-            headers,
-        )
+        logger.error(f"Runtime Error: {str(e)}")
+        return (json.dumps({"error": str(e)}), 500, headers)
