@@ -115,7 +115,7 @@ This system showcases **production-grade AI architecture**, combining:
 |------|-----------|
 | Frontend | Streamlit/React |
 | Backend | Python, FastAPI (optional) |
-| Agents | LangChain |
+| Agent/Framework| LangChain,LangGraph,LlamaIndex |
 | Vector DB | ChromaDB/Pinecone |
 | Embeddings | Sentence Transformers |
 | LLMs | Hugging Face (Mistral, Zephyr), Vertex AI |
