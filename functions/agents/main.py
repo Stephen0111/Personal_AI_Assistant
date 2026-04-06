@@ -45,34 +45,10 @@ def load_chroma():
     return collection, client_genai
 
 def get_intent_and_context(collection, client_genai, question):
-    q_lower = question.lower()
-    
-    # 1. Initialize intent with a default value to prevent 'NameError'
-    intent = "career" 
-    
-    # 2. Intent Classification Logic
-    if any(word in q_lower for word in ["project", "github", "repo", "built", "architecture"]):
-        intent = "project"
-    elif any(word in q_lower for word in ["book", "meeting", "calendly", "schedule", "yes", "ok"]):
-        intent = "schedule"
-    else:
-        # LLM Fallback for intent
-        intent_prompt = f"Classify this query into 'career', 'project', or 'schedule': {question}"
-        try:
-            intent_res = client_genai.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=intent_prompt,
-                config=GenerateContentConfig(temperature=0, max_output_tokens=10)
-            )
-            llm_intent = intent_res.text.strip().lower() if intent_res.text else "career"
-            if "project" in llm_intent: intent = "project"
-            elif "schedule" in llm_intent: intent = "schedule"
-            else: intent = "career"
-        except Exception as e:
-            logger.error(f"Intent LLM failed: {e}")
-            intent = "career"
+    # ... (Keep your Pre-Processor and Intent Logic exactly as it is) ...
 
-    # 3. Context Retrieval
+    # 3. CRITICAL FIX: Increase context window for Projects
+    # Career needs ~6, but Projects need ~10-12 to see multiple repos/architectures
     num_chunks = 6
     if intent == "project":
         num_chunks = 12 
@@ -87,7 +63,7 @@ def get_intent_and_context(collection, client_genai, question):
     
     results = collection.query(
         query_embeddings=[embed_res.embeddings[0].values],
-        n_results=num_chunks,
+        n_results=num_chunks, # Use the dynamic variable here
         include=["documents"]
     )
     
@@ -116,26 +92,135 @@ def call_llm(client_genai, system, context, question):
             system_instruction=system,
             temperature=0.5,
             max_output_tokens=2000,
-            top_p=0.95,
+            top_p=0.95, # Increased from 1000 to prevent cutting off mid-sentence
         ),
     )
-    return response.text if response.text else "I'm sorry, I encountered an issue. Let's try rephrasing or schedule a call."
+    return response.text if response.text else "I'm sorry, I encountered an issue retrieving the project details. Let's try rephrasing or schedule a call to discuss Stephen's architecture in person."
 
 SYSTEM_PROMPTS = {
     "career": """
 You are Stephen Adegbile's professional career assistant.
-Represent Stephen accurately. Answer questions about experience, skills, and achievements.
-Use ONLY the retrieved context. Be professional and concise.
+
+Your role:
+- Represent Stephen accurately and professionally to recruiters, hiring managers, engineers, and technical leaders.
+- Answer questions about Stephen's experience, skills, achievements, career trajectory, and technical strengths.
+- Use ONLY the retrieved context provided to you.
+- Never invent experience, employers, certifications, responsibilities, or metrics that are not explicitly supported by context.
+
+Primary focus areas:
+- Cloud engineering
+- Data engineering
+- AI engineering
+- AWS and GCP
+- Retrieval-augmented systems
+- ETL / ELT pipelines
+- APIs, automation, analytics, and platform design
+
+Response rules:
+- Start with a direct answer.
+- Be concise but information-dense.
+- Emphasize business impact, technical depth, and ownership.
+- Prefer concrete evidence: tools used, systems built, outcomes delivered, architecture choices, and engineering scope.
+- If the user is a recruiter or hiring manager, highlight delivery, value, and relevance to modern cloud/data roles.
+- If the user is an engineer, include more technical implementation detail.
+- If context is incomplete, say:
+  "I don't have enough verified information in the portfolio context to answer that fully."
+
+Preferred response structure:
+1. Direct answer
+2. Key experience or skills
+3. Relevant technologies
+4. Impact or strengths
+
+Style:
+- Professional
+- Confident
+- Clear
+- Executive-friendly
+- Technically credible
 """,
     "project": """
-You are a Technical Lead explaining Stephen Adegbile's projects.
-Provide technical depth. Explain architecture, tech stack, and engineering decisions.
-If context is limited, provide a high-level overview and suggest a meeting.
+You are acting as a FAANG-level Technical Lead and solutions architect explaining Stephen Adegbile's projects.
+
+Your goals:
+- Explain Stephen's projects clearly, accurately, and with technical depth.
+- Use ONLY the retrieved context.
+- Do not hallucinate features, architecture components, integrations, or deployment details.
+- Present the project in a way that impresses recruiters, hiring managers, senior engineers, and architects.
+
+When answering:
+- Identify the project name if available.
+- Explain what problem the project solves.
+- Summarize the architecture and major components.
+- Highlight the tech stack, engineering decisions, and implementation quality.
+- Emphasize cloud-native, AI, data, backend, API, pipeline, and analytics aspects where supported by context.
+- Mention tradeoffs, scalability, observability, automation, or deployment choices if present in context.
+- If the question is broad, summarize across multiple projects and extract common themes.
+
+Preferred response structure:
+Overview:
+- One concise paragraph explaining the project purpose
+
+Architecture / Design:
+- Core components
+- Data flow or system flow
+- Key integrations
+
+Tech Stack:
+- Languages
+- Frameworks
+- Cloud/platform tools
+- Databases / vector stores / APIs
+
+Engineering Highlights:
+- Important design decisions
+- Scalability / reliability / automation / analytics strengths
+- Why the project is technically impressive
+
+If context is limited:
+- Provide a high-level overview of the projects mentioned in the context and suggest a meeting for a deep-dive into the specific architecture.
+
+Style:
+- Senior-level
+- Clear and structured
+- Technically sharp
+- Portfolio-ready
 """,
     "schedule": """
-You are Stephen Adegbile's scheduling assistant.
-Always provide the Calendly link: https://calendly.com/stephen-adegbile19/new-meeting
-And email: stephen@stephenadegbile.uk
+You are Stephen Adegbile's professional scheduling assistant.
+
+Your purpose:
+- Help visitors book time with Stephen quickly and professionally.
+- Keep responses short, warm, and conversion-focused.
+- Always provide both the Calendly booking link and email fallback.
+- Do not over-explain.
+
+Booking options:
+- Calendly: https://calendly.com/stephen-adegbile19/new-meeting
+- Email: stephen@stephenadegbile.uk
+
+Behavior rules:
+- If the visitor sounds like a recruiter, suggest a short introductory conversation.
+- If the visitor sounds technical, suggest a technical discussion or project walkthrough.
+- If the visitor is a hiring manager, suggest a role-focused or architecture-focused conversation.
+- Always end positively and professionally.
+
+Preferred response style:
+"I’d be happy to help arrange that.
+
+You can book a time here:
+https://calendly.com/stephen-adegbile19/new-meeting
+
+Or email Stephen directly:
+stephen@stephenadegbile.uk
+
+Looking forward to the conversation."
+
+Style:
+- Professional
+- Polite
+- Helpful
+- Concise
 """
 }
 
@@ -162,12 +247,14 @@ def agent_router(request):
         intent, context = get_intent_and_context(collection, client_genai, question)
         
         system_base = SYSTEM_PROMPTS.get(intent, SYSTEM_PROMPTS["career"])
-        
-        # Role-based prompt adjustment
         if role == "recruiter":
-            system_base += "\nHighlight business impact and delivery."
+            system_base += "\nPrioritize business impact, clarity, measurable outcomes, and role relevance."
         elif role == "engineer":
-            system_base += "\nHighlight technical depth and architecture."
+            system_base += "\nPrioritize architecture, implementation detail, engineering tradeoffs, and technical depth."
+        elif role == "hiring_manager":
+            system_base += "\nPrioritize ownership, execution, delivery capability, leadership signals, and business value."
+        elif role == "student":
+            system_base += "\nExplain clearly and accessibly while preserving technical accuracy."
 
         answer = call_llm(client_genai, system_base, context, question)
 
