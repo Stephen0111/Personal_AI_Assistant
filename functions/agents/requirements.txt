@@ -1,10 +1,8 @@
 functions-framework==3.*
 google-cloud-storage==2.*
 google-cloud-secret-manager==2.*
-PyGithub==2.*
-langchain==0.3.*
-langchain-huggingface==0.1.*
-langchain-chroma==0.1.*
-sentence-transformers==3.*
-chromadb==0.5.*
-google-genai
+google-genai>=1.0.0
+chromadb>=0.4.0
+requests==2.*
+langchain-google-vertexai>=1.0.0
+langchain-core
