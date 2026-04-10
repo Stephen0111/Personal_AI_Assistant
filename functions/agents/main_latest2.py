@@ -42,8 +42,8 @@ _GRAPH_LOCK = threading.Lock()
 # Constants
 # -----------------------------------------------------------------------------
 
-MAX_RETRIEVAL_DOCS = 8
-CAREER_PER_QUERY_RESULTS = 3
+MAX_RETRIEVAL_DOCS = 12
+CAREER_PER_QUERY_RESULTS = 4
 
 FIT_SIGNAL_PATTERNS = [
     r"\bdo you qualify\b",
@@ -66,8 +66,7 @@ FIT_SIGNAL_PATTERNS = [
     r"\brequirements\b",
 ]
 
-# These are requirement-detection aliases only.
-# They are NOT assumed strengths and are only used if the JD mentions them.
+# Requirement detection only. These are not assumed strengths.
 REQUIREMENT_ALIASES = {
     "aws": ["aws", "amazon web services", "bedrock", "sagemaker", "glue", "emr", "s3", "redshift", "mwaa", "kinesis", "lambda", "athena"],
     "gcp": ["gcp", "google cloud", "vertex ai", "bigquery", "cloud run", "cloud composer", "dataflow", "gcs", "cloud functions", "pub/sub", "pubsub"],
@@ -292,6 +291,12 @@ Interpretation rules:
 - Base that conclusion only on available evidence.
 - If evidence is mixed, say so.
 
+- For non-job-fit career questions such as tech stack, data engineering skills, cloud experience, AI skills, or software engineering background:
+  - provide a richer and more comprehensive technical breakdown
+  - group technologies into meaningful categories where appropriate
+  - mention representative tools, platforms, languages, and frameworks that are explicitly supported by the retrieved context
+  - prefer breadth plus specificity over overly compressed summaries
+
 Response design rules:
 - Adapt depth by user type:
   recruiter -> emphasize requirement match, commercial relevance, time-to-value, production readiness, seniority signals
@@ -317,6 +322,7 @@ You must produce:
 Additional formatting guidance:
 - In summary, give the direct answer first.
 - In core_competencies, include only verified evidence-backed competencies or role-match points.
+- For non-job-fit questions, core_competencies should be detailed and can contain a larger number of specific items when strongly supported by context.
 - In strategic_value, explain how Stephen would create value OR explain the fit/gap assessment in a grounded way.
 - If important requirements are unverified, say that clearly in the summary or strategic_value."""
         ),
@@ -442,7 +448,11 @@ STRATEGIC VALUE:
 - Only downgrade claims that are unsupported.
 - If some requirements are supported and others are missing or unclear, use VERDICT: Partial match —
 - Do not permit invented years of experience, invented cloud/platform depth, invented stakeholder exposure, invented architecture leadership, invented governance depth, or invented client delivery.
-- Prefer cautious, evidence-based wording when support is incomplete."""
+- Prefer cautious, evidence-based wording when support is incomplete.
+
+For non-job-fit career answers:
+- Preserve useful technical detail and category structure when the content is supported by the retrieved context.
+- Do not unnecessarily compress a detailed technical answer into a shorter generic summary."""
         ),
         (
             "human",
@@ -529,7 +539,6 @@ def _fallback_retrieval_queries(question: str, intent: str) -> list[str]:
 
     requirement_keys = _extract_requirement_keys(question)
 
-    # Neutral anchors that do not pre-claim unsupported skills.
     queries = [
         "Stephen Adegbile skills experience role fit",
         "Stephen Adegbile production AI systems delivery",
@@ -551,7 +560,6 @@ def _plan_retrieval_queries(state: AgentState, llm) -> list[str]:
 
     requirement_keys = _extract_requirement_keys(question)
 
-    # For short non-fit questions, keep it simple.
     if len(question) < 700 and not _is_job_fit_question(question):
         return _fallback_retrieval_queries(question, intent)
 
@@ -574,7 +582,6 @@ def _plan_retrieval_queries(state: AgentState, llm) -> list[str]:
 
         queries.extend(plan.evidence_queries or [])
 
-        # Add only requirement-specific queries detected from the JD itself.
         for key in requirement_keys:
             queries.append(_skill_query_from_key(key))
 
@@ -789,24 +796,54 @@ def retrieve_context(state: AgentState) -> AgentState:
     intent = state["intent"]
 
     if intent == "career":
-        retrieval_queries = _plan_retrieval_queries(state, llm)
-        logger.info("Career retrieval queries: %s", retrieval_queries)
+        if state.get("is_job_fit", False):
+            retrieval_queries = _plan_retrieval_queries(state, llm)
+            logger.info("Career job-fit retrieval queries: %s", retrieval_queries)
 
-        query_vectors = _embed_queries(client_genai, retrieval_queries)
+            query_vectors = _embed_queries(client_genai, retrieval_queries)
 
-        results = collection.query(
-            query_embeddings=query_vectors,
-            n_results=CAREER_PER_QUERY_RESULTS,
-            include=["documents", "distances"],
+            results = collection.query(
+                query_embeddings=query_vectors,
+                n_results=CAREER_PER_QUERY_RESULTS,
+                include=["documents", "distances"],
+            )
+
+            docs = _aggregate_ranked_docs(results, MAX_RETRIEVAL_DOCS)
+            context = "\n\n".join(docs)
+
+            return {
+                "retrieved_docs": docs,
+                "retrieved_context": context,
+                "retrieval_queries": retrieval_queries,
+            }
+
+        embed_res = client_genai.models.embed_content(
+            model=os.getenv("VERTEX_EMBED_MODEL", "gemini-embedding-001"),
+            contents=[state["question"]],
+            config=EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
         )
 
-        docs = _aggregate_ranked_docs(results, MAX_RETRIEVAL_DOCS)
+        query_vector = embed_res.embeddings[0].values
+        logger.info("Career broad-query embedding length: %s", len(query_vector))
+
+        if len(query_vector) != 3072:
+            raise ValueError(
+                f"Embedding dimension mismatch: expected 3072, got {len(query_vector)}"
+            )
+
+        results = collection.query(
+            query_embeddings=[query_vector],
+            n_results=8,
+            include=["documents"],
+        )
+
+        docs = results.get("documents", [[]])[0] if results else []
         context = "\n\n".join(docs)
 
         return {
             "retrieved_docs": docs,
             "retrieved_context": context,
-            "retrieval_queries": retrieval_queries,
+            "retrieval_queries": [state["question"]],
         }
 
     embed_res = client_genai.models.embed_content(
