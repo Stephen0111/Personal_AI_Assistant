@@ -183,6 +183,7 @@ class RetrievalPlan(BaseModel):
         description="Short search queries aimed at retrieving Stephen's evidence."
     )
 
+
 # -----------------------------------------------------------------------------
 # Prompt templates
 # -----------------------------------------------------------------------------
@@ -744,6 +745,7 @@ def render_final_response(intent: str, structured: dict) -> str:
 
     return json.dumps(structured, indent=2)
 
+
 # -----------------------------------------------------------------------------
 # Nodes
 # -----------------------------------------------------------------------------
@@ -795,6 +797,10 @@ def retrieve_context(state: AgentState) -> AgentState:
 
     intent = state["intent"]
 
+    # ------------------------------------------------------------------
+    # Career path: use multi-query retrieval for job-fit questions,
+    # and single-query for broad career questions.
+    # ------------------------------------------------------------------
     if intent == "career":
         if state.get("is_job_fit", False):
             retrieval_queries = _plan_retrieval_queries(state, llm)
@@ -817,6 +823,7 @@ def retrieve_context(state: AgentState) -> AgentState:
                 "retrieval_queries": retrieval_queries,
             }
 
+        # Non-job-fit career question: single embedding, broader retrieval
         embed_res = client_genai.models.embed_content(
             model=os.getenv("VERTEX_EMBED_MODEL", "gemini-embedding-001"),
             contents=[state["question"]],
@@ -846,6 +853,9 @@ def retrieve_context(state: AgentState) -> AgentState:
             "retrieval_queries": [state["question"]],
         }
 
+    # ------------------------------------------------------------------
+    # Project / schedule path: single embedding query
+    # ------------------------------------------------------------------
     embed_res = client_genai.models.embed_content(
         model=os.getenv("VERTEX_EMBED_MODEL", "gemini-embedding-001"),
         contents=[state["question"]],
@@ -949,6 +959,7 @@ def refine_response(state: AgentState) -> AgentState:
         "conversation_history": history,
     }
 
+
 # -----------------------------------------------------------------------------
 # Routing helpers
 # -----------------------------------------------------------------------------
@@ -959,6 +970,7 @@ def route_after_classifier(state: AgentState) -> Literal["career_graph", "projec
         "project": "project_graph",
         "schedule": "schedule_graph",
     }[state["intent"]]
+
 
 # -----------------------------------------------------------------------------
 # Subgraphs
@@ -1038,6 +1050,7 @@ def build_schedule_subgraph():
     builder.add_edge("refine_response", END)
     return builder.compile()
 
+
 # -----------------------------------------------------------------------------
 # Parent graph
 # -----------------------------------------------------------------------------
@@ -1077,6 +1090,7 @@ def get_graph():
 
         _GRAPH = builder.compile(checkpointer=build_checkpointer())
         return _GRAPH
+
 
 # -----------------------------------------------------------------------------
 # Cloud Function entry point
